@@ -1,0 +1,115 @@
+diff --git a/makefile b/makefile
+index 7e06892..f03608f 100644
+--- a/makefile
++++ b/makefile
+@@ -4,7 +4,6 @@ include ${TD}/setup.gmk
+ .PHONY: all
+ all:	build-local/bin/crc32 \
+ 	src/kwcrc.h \
+-	deps \
+ 	s-all
+ 
+ # Shortcuts to run station specific goals
+diff --git a/setup.gmk b/setup.gmk
+index a4ccfae..534aba9 100644
+--- a/setup.gmk
++++ b/setup.gmk
+@@ -30,7 +30,7 @@ ifeq (,$(wildcard ${TOOLCHAIN}))
+ ifeq (${LOCAL_ARCH},${ARCH})
+ TOOLPREFIX=
+ else
+-$(warning No toolchain for platform '${platform}' and local arch is not '${ARCH}')
++#$(warning No toolchain for platform '${platform}' and local arch is not '${ARCH}')
+ TOOLPREFIX=NO-TOOLCHAIN-FOUND-
+ endif
+ else
+@@ -43,11 +43,11 @@ ifeq (kerlink,${platform})
+ export LD_LIBRARY_PATH=${TOOLCHAIN}/usr/lib
+ endif
+ 
+-CC=${TOOLPREFIX}gcc
+-LD=${TOOLPREFIX}ld
+-AR=${TOOLPREFIX}ar
+-OD=${TOOLPREFIX}objdump
+-OC=${TOOLPREFIX}objcopy
++#CC=${TOOLPREFIX}gcc
++#LD=${TOOLPREFIX}ld
++#AR=${TOOLPREFIX}ar
++#OD=${TOOLPREFIX}objdump
++#OC=${TOOLPREFIX}objcopy
+ 
+ # Everything being build is somewhere in here
+ BD=build-${platform}-${variant}
+@@ -72,6 +72,7 @@ CFG.debugn  = logini_lvl=DEBUG selftests tlsdebug ral_master_slave
+ CFG.linux   = linux lgw1 no_leds
+ CFG.rpi     = linux lgw1 no_leds
+ CFG.kerlink = linux lgw1 no_leds
++CFG.lorixone = linux lgw1 no_leds
+ 
+ SD.default = src-linux
+ 
+@@ -107,6 +108,10 @@ CFLAGS.linux.std      = -g -O3
+ LIBS.linux   = -llgw   ${MBEDLIBS}      -lpthread
+ LIBS.rpi     = -llgw   ${MBEDLIBS}      -lpthread
+ LIBS.kerlink = -llgw   ${MBEDLIBS} -lrt -lpthread
++LIBS.lorixone = -lloragw  ${MBEDLIBS}   -lpthread
++
++INCS.lorixone = -I =/usr/include/lora-gateway/inc
++LDFLAGS.lorixone = -L =/usr/lib/lora-gateway
+ 
+ xCFG     =     ${CFG.${ARCH}}     ${CFG.${platform}}     ${CFG.${variant}}    ${CFG.${platform}.${variant}}
+ xCFLAGS  =  ${CFLAGS.${ARCH}}  ${CFLAGS.${platform}}  ${CFLAGS.${variant}} ${CFLAGS.${platform}.${variant}}
+diff --git a/src/ral_lgw.c b/src/ral_lgw.c
+index a3a180c..83d0570 100644
+--- a/src/ral_lgw.c
++++ b/src/ral_lgw.c
+@@ -39,8 +39,8 @@
+ #include "sys.h"
+ #include "sx1301conf.h"
+ #include "ral.h"
+-#include "lgw/loragw_reg.h"
+-#include "lgw/loragw_hal.h"
++#include "loragw_reg.h"
++#include "loragw_hal.h"
+ 
+ #define RAL_MAX_RXBURST 10
+ 
+diff --git a/src/sx1301conf.c b/src/sx1301conf.c
+index bca649c..314245c 100644
+--- a/src/sx1301conf.c
++++ b/src/sx1301conf.c
+@@ -36,7 +36,7 @@
+ #include "sys_linux.h"
+ #endif // defined(CFG_linux)
+ #include "sx1301conf.h"
+-#include "lgw/loragw_reg.h"
++#include "loragw_reg.h"
+ 
+ static void parse_tx_gain_lut (ujdec_t* D, struct lgw_tx_gain_lut_s* txlut) {
+     int slot;
+@@ -433,7 +433,7 @@ int sx1301conf_start (struct sx1301conf* sx1301conf, u4_t cca_region) {
+     }
+ 
+     LOG(MOD_RAL|INFO, "Station device: %s (PPS capture %sabled)", sx1301conf->device, sx1301conf->pps ? "en":"dis");
+-    lgwx_device_mode = sys_deviceMode;
++
+     int err = lgw_start();
+     if( err == LGW_HAL_SUCCESS ) {
+         lgw_reg_w(LGW_GPS_EN, sx1301conf->pps ? 1 : 0);
+diff --git a/src/sx1301conf.h b/src/sx1301conf.h
+index fad05fb..b517b88 100644
+--- a/src/sx1301conf.h
++++ b/src/sx1301conf.h
+@@ -32,9 +32,9 @@
+ #if defined(CFG_lgw1)
+ 
+ #include <stdio.h> // loragw_fpga.h refers to FILE
+-#include "lgw/loragw_hal.h"
+-#include "lgw/loragw_lbt.h"
+-#include "lgw/loragw_fpga.h"
++#include "loragw_hal.h"
++#include "loragw_lbt.h"
++#include "loragw_fpga.h"
+ #include "s2conf.h"
+ 
+ 

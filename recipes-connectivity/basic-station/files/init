@@ -1,0 +1,136 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          basic-station
+# Required-Start:    
+# Required-Stop:     reset-lgw $local_fs
+# Should-Start:      
+# Should-Stop:       
+# Default-Start:     
+# Default-Stop:      70 0 1 6
+# Short-Description: Semtech packet-forwarder for a LoRaWAN Gateway
+# Description:       LoRaWAN gateway that controls the 
+#                    LoRa concentrator board
+#                    
+### END INIT INFO
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/usr/sbin:/sbin:/bin:/usr/bin:/usr/local/bin
+DESC="Semtech packet-forwarder for a LoRaWAN gateway"
+NAME=basic-station
+SCRIPTNAME=/etc/init.d/$NAME
+RUNDIR=/opt/lorix/clouds/basic-station
+DAEMON=$RUNDIR/station
+PIDFILE=/var/run/$NAME.pid
+OPTIONS=""
+LOGDIR=/var/log
+
+# Uncomment the following line to enable output logging file
+# You can configure log rotation using the file /etc/logrotate.d/basic-station.log
+#LOGFILE=$LOGDIR/basic-station.log
+
+# Source init.d functions
+. /etc/init.d/functions
+
+# Exit if the package is not installed
+if [ ! -x "$DAEMON" ]; then
+    echo "Daemon $DAEMON does not exist, exiting..."
+    exit 0
+fi
+
+# Return
+#   0 if daemon has been started
+#   1 if daemon was already running
+#   other if daemon could not be started or a failure occured
+do_start()
+{
+    # Test actual status and quit if already running
+    $0 status > /dev/null 2>&1
+    ret=$?
+    if (( $ret == 0 )); then
+        echo "$DAEMON is already running"
+        return 1
+    fi
+    
+    # Restart SX1301 concentrator
+    sudo /etc/init.d/reset-lgw restart > /dev/null
+
+    # Manage logfile
+    if [ -n "$LOGFILE" ] && [ ! -f "$LOGFILE" ]; then        
+        # Logfile doesn't exist, try to create it            
+        touch $LOGFILE > /dev/null 2>&1                      
+    fi
+    if [ -n "$LOGFILE" ] && [ -w "$LOGFILE" ]; then
+        # Launch the forwarder and enable output to logfile
+        COMMAND="exec stdbuf -oL -eL $DAEMON $OPTIONS > $LOGFILE 2>&1"
+    else
+        # Launch the forwarder without logfile
+        COMMAND="exec $DAEMON $OPTIONS"
+    fi
+    
+    # Launch command
+    sudo start-stop-daemon-ext --start --quiet --background --make-pidfile \
+    --pidfile $PIDFILE --chdir $RUNDIR --startas /bin/bash -- -c "$COMMAND"
+        
+    $0 status > /dev/null 2>&1
+    ret=$?
+    if (( $ret != 0 )); then
+        echo "Error during launch of $DAEMON, not started"
+    fi
+    return $ret
+}
+
+# Return
+#   0 if daemon has been stopped
+#   1 if daemon was already stopped
+#   other if daemon could not be stopped or a failure occurred
+do_stop()
+{
+    cd $RUNDIR
+    sudo start-stop-daemon --stop --verbose --signal TERM --pidfile $PIDFILE --exec $DAEMON >/dev/null 2>&1
+    ret=$?
+
+    $0 status > /dev/null 2>&1
+    status=$?
+    timeout=0
+    until [ $status -ne 0 ] || [ $timeout -eq 10 ]; do
+        sleep 1
+        $0 status > /dev/null
+        status=$?
+        let timeout=timeout+1
+    done
+
+    if [ $status -eq 0 ]; then
+        echo "timeout during wait for stop"
+        sudo start-stop-daemon --stop --signal KILL --pidfile $PIDFILE --exec $DAEMON
+    fi
+
+    if (( $ret == 1 )); then
+        echo "$DAEMON was not running"
+    elif [ $ret -eq 0 ] && [ -f $PIDFILE ]; then
+        rm $PIDFILE
+    fi
+    return $ret
+}
+
+case "$1" in
+  start)
+    do_start
+    ;;
+  stop)
+    do_stop
+    ;;
+  restart|force-reload)
+    $0 stop
+    $0 start
+    ;;
+  status)
+    status $DAEMON && exit 0 || exit $?
+    ;;
+  *)
+    echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload|status}" >&2
+    exit 3
+    ;;
+esac
+
+exit 0
+
